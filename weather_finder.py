@@ -125,18 +125,9 @@ class WeatherFinderApp:
         self.city_label.pack(fill=tk.X)
 
         # --- Frame de alertas (oculto por padrão) ---
-        self.alert_frame = tk.Frame(self.root, bg="#FFFE00", padx=12, pady=8)
-        self.alert_label = tk.Label(
-            self.alert_frame,
-            text="",
-            fg="#333333",
-            bg="#FFFE00",
-            font=("Segoe UI", 10),
-            anchor="w",
-            justify=tk.LEFT,
-            wraplength=680,
-        )
-        self.alert_label.pack(fill=tk.X)
+        self.alert_frame = tk.Frame(self.root, bg="#CCCCCC")
+        self._last_alert_width: int = 0
+        self.alert_frame.bind("<Configure>", self._on_alert_frame_configure)
         # Não exibir até que haja alertas
 
         # --- Área de log ---
@@ -439,36 +430,70 @@ class WeatherFinderApp:
         )
 
         # --- Painel de alertas ---
+        for widget in self.alert_frame.winfo_children():
+            widget.destroy()
+
         if alerts:
-            parts: list[str] = []
+            current_w = self.alert_frame.winfo_width()
+            if current_w <= 1:
+                current_w = self.root.winfo_width()
+            if current_w <= 1:
+                current_w = 720
+            initial_wraplength = max(100, current_w - 28)
+
             for a in alerts:
                 risk_str = "; ".join(r.strip() for r in a.get("riscos", [])[:2])
-                parts.append(
-                    f"[{a['severidade']}] {a['descricao']} — {risk_str}"
+                alert_text = (
+                    f"[{a.get('severidade', 'Alerta')}] {a.get('descricao', '')} — {risk_str}"
                 )
 
-            # Cor conforme severidade mais alta
-            sevs = [a["severidade"] for a in alerts]
-            if "Grande Perigo" in sevs:
-                bg, fg = "#CC0000", "#FFFFFF"
-            elif "Perigo" in sevs:
-                bg, fg = "#FF8C00", "#FFFFFF"
-            else:
-                bg, fg = "#FFFE00", "#333333"
+                # Cor de fundo e fonte conforme severidade de cada alerta
+                sev = a.get("severidade", "")
+                if sev in ["Grande Perigo", "Perigo Potencial"]:
+                    bg, fg = "#CC0000", "#FFFFFF"
+                elif sev == "Perigo":
+                    bg, fg = "#FF8C00", "#000000"
+                else:
+                    bg, fg = "#FFFE00", "#333333"
 
-            self.alert_frame.config(bg=bg)
-            self.alert_label.config(text="\n".join(parts), bg=bg, fg=fg)
+                lbl = tk.Label(
+                    self.alert_frame,
+                    text=alert_text,
+                    bg=bg,
+                    fg=fg,
+                    font=("Segoe UI", 10),
+                    anchor="w",
+                    justify=tk.LEFT,
+                    wraplength=initial_wraplength,
+                    padx=12,
+                    pady=4,
+                )
+                lbl.pack(fill=tk.X, pady=(0, 1))
+
             self.alert_frame.pack(
                 fill=tk.X, after=self.city_label.master
             )
         else:
             self.alert_frame.pack_forget()
+            self._last_alert_width = 0
 
         # --- Inserir log no topo (ordem decrescente) ---
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert("1.0", log_entry)
         self.log_text.config(state=tk.DISABLED)
         self.log_text.see("1.0")
+
+    def _on_alert_frame_configure(self, event: tk.Event) -> None:
+        """Ajusta dinamicamente a largura de quebra (wraplength) dos alertas ao redimensionar a janela."""
+        if event.widget != self.alert_frame:
+            return
+        if event.width == self._last_alert_width or event.width <= 1:
+            return
+        self._last_alert_width = event.width
+        new_wraplength = max(100, event.width - 28)
+        for widget in self.alert_frame.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.config(wraplength=new_wraplength)
 
     def _show_error(self, error_msg: str) -> None:
         if not self._running:
